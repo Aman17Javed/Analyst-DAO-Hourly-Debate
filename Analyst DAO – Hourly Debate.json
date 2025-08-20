@@ -1,0 +1,315 @@
+{
+  "name": "Analyst DAO – Hourly Debate",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "// Parse OpenAI output into JSON + add timestamp\nconst results = [];\n\nfor (const item of items) {\n  try {\n    const content = item.json.message.content;  // OpenAI output\n    const parsed = JSON.parse(content);\n\n    // add date/time\n    parsed.date = new Date().toISOString();\n\n    results.push({ json: parsed });\n  } catch (error) {\n    results.push({\n      json: { \n        error: \"Invalid JSON\", \n        raw: item.json.message.content, \n        date: new Date().toISOString() // still log timestamp\n      }\n    });\n  }\n}\n\nreturn results;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        -176
+      ],
+      "id": "9e858167-9d9f-411e-a5e1-0298bd63a6de",
+      "name": "Parsing the Output to JSON"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build WhatsApp message directly from parsed objects\nlet message = \"📊 *Crypto Trade Signals*\\n\\n\";\n\nfor (const item of items) {\n  const data = item.json;\n\n  if (!data.coin) {\n    message += `⚠️ Missing coin info: ${JSON.stringify(data)}\\n\\n`;\n    continue;\n  }\n\n  message += `💰 *${data.coin.toUpperCase()}*\\n`;\n  message += `Action: ${data.action}\\n`;\n  message += `Reason: ${data.reasoning}\\n`;\n  message += `Date: ${new Date(data.date).toLocaleString()}\\n\\n`;\n}\n\n// ✅ Return in Twilio-ready format (not wrapped in json key)\nreturn {\n  body: message.trim()\n};\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        688,
+        -176
+      ],
+      "id": "d310ee54-c081-4a04-92d6-8e6b6b0175e4",
+      "name": "Integrating Messages"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -784,
+        -176
+      ],
+      "id": "c9c0cfac-0ddf-4005-bc70-6188ccee4506",
+      "name": "Trigger Every Hour"
+    },
+    {
+      "parameters": {
+        "url": "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum,solana,cardano,polkadot,binancecoin&vs_currencies=usd&include_24hr_change=true&include_last_updated_at=true",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -560,
+        -176
+      ],
+      "id": "ab22fa6a-e043-4b0d-97ce-1cdb3f8769c5",
+      "name": "Fetch Data"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Input: JSON from CoinGecko\nconst data = items[0].json;\n\nconst results = [];\n\nfor (const coin in data) {\n  const price = data[coin].usd;\n  const change = data[coin].usd_24h_change;\n  const updated = new Date(data[coin].last_updated_at * 1000).toISOString();\n\n  // Risk classification\n  let risk = \"Low\";\n  if (Math.abs(change) >= 5) {\n    risk = \"High\";\n  } else if (Math.abs(change) >= 2) {\n    risk = \"Medium\";\n  }\n\n  results.push({\n    coin: coin,\n    price_usd: price,\n    change_24h: change.toFixed(2),\n    risk_level: risk,\n    last_updated: updated\n  });\n}\n\nreturn results.map(r => ({ json: r }));\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -336,
+        -176
+      ],
+      "id": "ed0a3d1c-c45a-4310-88a6-fd5af6249d40",
+      "name": "Classify Data"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-3.5-turbo",
+          "mode": "list",
+          "cachedResultName": "GPT-3.5-TURBO"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "You are a crypto risk analyst.  \nYou must return JSON with the keys: coin, action, reasoning.  \nThe action MUST be one of: [\"Buy\", \"Sell\", \"Hold\"].  \n- If the price decreased more than 5% in 24h and risk is high → recommend \"Sell\".  \n- If the price increased more than 5% in 24h with low risk → recommend \"Buy\".  \n- Otherwise → recommend \"Hold\".  \n\nReturn only valid JSON. Example:  \n{\"coin\":\"bitcoin\",\"action\":\"Buy\",\"reasoning\":\"Strong upward momentum with low risk.\"}\n",
+              "role": "system"
+            },
+            {
+              "content": "={{ JSON.stringify($json) }}\n"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        -112,
+        -176
+      ],
+      "id": "1fa1be57-2d08-4b8f-a628-22a785c850ea",
+      "name": "Analyzing Data",
+      "credentials": {
+        "openAiApi": {
+          "id": "vrvqpjlj5Ws749i8",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1ZX7NRVj3J4hkcMANN8n4GuyLihYs0z70-wrK_FiSFis",
+          "mode": "list",
+          "cachedResultName": "DOA_N8n",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1ZX7NRVj3J4hkcMANN8n4GuyLihYs0z70-wrK_FiSFis/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1449414069,
+          "mode": "list",
+          "cachedResultName": "Sheet2",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1ZX7NRVj3J4hkcMANN8n4GuyLihYs0z70-wrK_FiSFis/edit#gid=1449414069"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "coin",
+              "displayName": "coin",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "action",
+              "displayName": "action",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "reasoning",
+              "displayName": "reasoning",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "date",
+              "displayName": "date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        464,
+        -176
+      ],
+      "id": "39b30141-00af-41a8-ae37-626a16cb74e9",
+      "name": "Append Data",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "Z5hCxPx7eh9jnvgG",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "from": "+14155238886",
+        "to": "+923034818109",
+        "toWhatsapp": true,
+        "message": "={{ $json.body }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        912,
+        -176
+      ],
+      "id": "abff4d47-18fa-43bb-98a6-29acdaab7897",
+      "name": "Sending Message to Whatsapp",
+      "credentials": {
+        "twilioApi": {
+          "id": "8OCKpGwKWHixNCac",
+          "name": "Twilio account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Parsing the Output to JSON": {
+      "main": [
+        [
+          {
+            "node": "Append Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Integrating Messages": {
+      "main": [
+        [
+          {
+            "node": "Sending Message to Whatsapp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Every Hour": {
+      "main": [
+        [
+          {
+            "node": "Fetch Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Data": {
+      "main": [
+        [
+          {
+            "node": "Classify Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify Data": {
+      "main": [
+        [
+          {
+            "node": "Analyzing Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyzing Data": {
+      "main": [
+        [
+          {
+            "node": "Parsing the Output to JSON",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Append Data": {
+      "main": [
+        [
+          {
+            "node": "Integrating Messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sending Message to Whatsapp": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "a14823eb-93df-499f-b03d-ea1953623ea1",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "6467bd899d7bb0b231f0264e11de2fa9c522a6b527b29ed2940bf90637f4c48a"
+  },
+  "id": "oXug0JY9ZFjuDpNK",
+  "tags": []
+}
